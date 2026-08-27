@@ -67,7 +67,7 @@ model Transaction {
   updatedAt         DateTime        @updatedAt
   sourceFingerprint String?         @unique
   importBatchId     String?
-  importBatch       ImportBatch?    @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  importBatch       ImportBatch?    @relation(fields: [importBatchId, userId], references: [id, userId], onDelete: Cascade)
 
   category   Category @relation(fields: [categoryId], references: [id])
   categoryId String
@@ -93,6 +93,7 @@ model ImportBatch {
   user          User          @relation(fields: [userId], references: [id])
   transactions  Transaction[]
 
+  @@unique([id, userId])
   @@index([userId, createdAt])
 }
 

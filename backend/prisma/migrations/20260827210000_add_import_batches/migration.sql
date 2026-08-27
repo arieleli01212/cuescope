@@ -8,6 +8,9 @@ CREATE TABLE "ImportBatch" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "userId" TEXT NOT NULL,
 
+    CONSTRAINT "ImportBatch_importedCount_nonnegative" CHECK ("importedCount" >= 0),
+    CONSTRAINT "ImportBatch_skippedCount_nonnegative" CHECK ("skippedCount" >= 0),
+    CONSTRAINT "ImportBatch_rejectedCount_nonnegative" CHECK ("rejectedCount" >= 0),
     CONSTRAINT "ImportBatch_pkey" PRIMARY KEY ("id")
 );
 
@@ -23,10 +26,13 @@ CREATE UNIQUE INDEX "Transaction_sourceFingerprint_key" ON "Transaction"("source
 CREATE INDEX "Transaction_importBatchId_idx" ON "Transaction"("importBatchId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "ImportBatch_id_userId_key" ON "ImportBatch"("id", "userId");
+
+-- CreateIndex
 CREATE INDEX "ImportBatch_userId_createdAt_idx" ON "ImportBatch"("userId", "createdAt");
 
 -- AddForeignKey
 ALTER TABLE "ImportBatch" ADD CONSTRAINT "ImportBatch_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_importBatchId_fkey" FOREIGN KEY ("importBatchId") REFERENCES "ImportBatch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Transaction" ADD CONSTRAINT "Transaction_importBatchId_userId_fkey" FOREIGN KEY ("importBatchId", "userId") REFERENCES "ImportBatch"("id", "userId") ON DELETE CASCADE ON UPDATE CASCADE;

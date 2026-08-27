@@ -11,6 +11,13 @@ import { readVersionInfo } from "./version";
 export const app = express();
 
 app.use(cors({ origin: env.CORS_ORIGIN }));
+
+// Normalized import payloads can contain up to 5,000 rows. Keep the larger
+// bound scoped to imports; future import auth/routes belong on this router.
+const importApi = express.Router();
+importApi.use(express.json({ limit: "8mb" }));
+app.use("/v1/imports", importApi);
+
 app.use(express.json());
 
 app.get("/health", (_req, res) => {
