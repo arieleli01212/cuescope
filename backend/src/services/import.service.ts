@@ -13,6 +13,10 @@ import {
 type ImportRow = z.infer<typeof importRowSchema>;
 type PreviewImportDto = z.infer<typeof previewImportSchema>;
 
+// Merchant normalization is not schema-backed yet. Keep history lookup to one
+// deterministic recent window until a normalized, indexed key is persisted.
+export const RECENT_MERCHANT_HISTORY_LIMIT = 1000;
+
 export interface ImportPreview {
   adapter: typeof IMPORT_ADAPTER;
   validCount: number;
@@ -29,7 +33,10 @@ export interface ImportPreview {
 
 export interface ImportRepository {
   findStoredFingerprints(userId: string, fingerprints: readonly string[]): Promise<Set<string>>;
-  findRecentMerchantCategories(): Promise<readonly { merchant: string; categoryId: string }[]>;
+  findRecentMerchantCategories(
+    userId: string,
+    merchantKeys: readonly string[],
+  ): Promise<readonly { merchant: string; categoryId: string }[]>;
   findExistingCategoryIds(categoryIds: readonly string[]): Promise<Set<string>>;
   resolveFallbackCategory(): Promise<string>;
 }
@@ -62,13 +69,17 @@ export const prismaImportRepository: ImportRepository = {
     return new Set(stored.flatMap(({ sourceFingerprint }) => sourceFingerprint ? [sourceFingerprint] : []));
   },
 
-  async findRecentMerchantCategories() {
+  async findRecentMerchantCategories(userId, merchantKeys) {
+    if (merchantKeys.length === 0) return [];
     const history = await prisma.transaction.findMany({
-      where: { merchant: { not: null } },
-      orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+      where: { userId, merchant: { not: null } },
+      orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+      take: RECENT_MERCHANT_HISTORY_LIMIT,
       select: { merchant: true, categoryId: true },
     });
-    return history.flatMap(({ merchant, categoryId }) => merchant ? [{ merchant, categoryId }] : []);
+    return history
+      .flatMap(({ merchant, categoryId }) => merchant ? [{ merchant, categoryId }] : [])
+      .slice(0, RECENT_MERCHANT_HISTORY_LIMIT);
   },
 
   async findExistingCategoryIds(categoryIds) {
@@ -115,24 +126,29 @@ export function createImportService(repository: ImportRepository, baseCurrency: 
 
       const prepared = prepareRows(userId, amountValidRows);
       const uniqueFingerprints = [...new Set(prepared.map(({ fingerprint }) => fingerprint))];
-      const explicitMappings = new Map(
-        Object.entries(dto.categoryMappings).map(([merchant, categoryId]) => [
-          canonicalMerchant(merchant),
-          categoryId,
-        ]),
-      );
-      const mappedCategoryIds = [...new Set(Object.values(dto.categoryMappings))];
+      const relevantMerchantKeys = [...new Set(prepared.map(({ merchantKey }) => merchantKey))];
+      const relevantMerchantKeySet = new Set(relevantMerchantKeys);
+      const explicitMappings = new Map<string, string>();
+      for (const [merchant, categoryId] of Object.entries(dto.categoryMappings)) {
+        const merchantKey = canonicalMerchant(merchant);
+        if (relevantMerchantKeySet.has(merchantKey)) {
+          explicitMappings.set(merchantKey, categoryId);
+        }
+      }
+      const mappedCategoryIds = [...new Set(explicitMappings.values())];
 
       const [storedFingerprints, history, existingCategoryIds] = await Promise.all([
         repository.findStoredFingerprints(userId, uniqueFingerprints),
-        repository.findRecentMerchantCategories(),
+        repository.findRecentMerchantCategories(userId, relevantMerchantKeys),
         repository.findExistingCategoryIds(mappedCategoryIds),
       ]);
 
       const latestCategoryByMerchant = new Map<string, string>();
       for (const item of history) {
         const key = canonicalMerchant(item.merchant);
-        if (!latestCategoryByMerchant.has(key)) latestCategoryByMerchant.set(key, item.categoryId);
+        if (relevantMerchantKeySet.has(key) && !latestCategoryByMerchant.has(key)) {
+          latestCategoryByMerchant.set(key, item.categoryId);
+        }
       }
 
       let duplicateCount = 0;

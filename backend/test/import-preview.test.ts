@@ -8,9 +8,12 @@ import type { z } from "zod";
 import { importRowSchema } from "../src/dto/import.dto";
 import {
   ImportRepository,
+  RECENT_MERCHANT_HISTORY_LIMIT,
   createImportService,
   prepareRows,
+  prismaImportRepository,
 } from "../src/services/import.service";
+import { prisma } from "../src/database/prisma";
 
 type ImportRow = z.infer<typeof importRowSchema>;
 
@@ -39,7 +42,7 @@ function repository(overrides: Partial<ImportRepository> = {}) {
   const calls = {
     fingerprints: [] as string[][],
     categoryIds: [] as string[][],
-    history: 0,
+    history: [] as Array<{ userId?: string; merchantKeys?: readonly string[] }>,
     fallback: 0,
   };
   const value: ImportRepository = {
@@ -47,8 +50,8 @@ function repository(overrides: Partial<ImportRepository> = {}) {
       calls.fingerprints.push([...fingerprints]);
       return new Set();
     },
-    async findRecentMerchantCategories() {
-      calls.history += 1;
+    async findRecentMerchantCategories(userId?: string, merchantKeys?: readonly string[]) {
+      calls.history.push({ userId, merchantKeys });
       return [];
     },
     async findExistingCategoryIds(categoryIds) {
@@ -112,8 +115,8 @@ test("preview reports stored and payload duplicates using one bulk fingerprint l
 
 test("category suggestions prefer explicit mapping, then latest normalized history, then אחר", async () => {
   const fake = repository({
-    async findRecentMerchantCategories() {
-      fake.calls.history += 1;
+    async findRecentMerchantCategories(userId?: string, merchantKeys?: readonly string[]) {
+      fake.calls.history.push({ userId, merchantKeys });
       return [
         { merchant: "  KNOWN   shop ", categoryId: CATEGORY_IDS.latest },
         { merchant: "Known Shop", categoryId: CATEGORY_IDS.old },
@@ -145,9 +148,67 @@ test("category suggestions prefer explicit mapping, then latest normalized histo
       { key: "new shop", suggestedCategoryId: CATEGORY_IDS.fallback, suggestionSource: "fallback" },
     ],
   );
-  assert.equal(fake.calls.history, 1);
-  assert.deepEqual(fake.calls.categoryIds, [[CATEGORY_IDS.old, CATEGORY_IDS.explicit]]);
+  assert.deepEqual(fake.calls.history, [{
+    userId: "user-1",
+    merchantKeys: ["mapped shop", "known shop", "new shop"],
+  }]);
+  assert.deepEqual(fake.calls.categoryIds, [[CATEGORY_IDS.explicit]]);
   assert.equal(fake.calls.fallback, 1);
+});
+
+test("preview queries category IDs only for canonical mapping keys present in valid rows", async () => {
+  const fake = repository();
+  const irrelevantMappings = Object.fromEntries(
+    Array.from({ length: 200 }, (_, index) => [
+      `irrelevant merchant ${index}`,
+      `123e4567-e89b-42d3-a456-${String(index).padStart(12, "0")}`,
+    ]),
+  );
+
+  await createImportService(fake.value, "ILS").preview("user-1", {
+    adapter: "credit-card-xlsx-v1",
+    rows: [row({ merchant: "  Relevant   Shop " })],
+    categoryMappings: {
+      ...irrelevantMappings,
+      "relevant shop": CATEGORY_IDS.old,
+      "  RELEVANT   SHOP ": CATEGORY_IDS.explicit,
+    },
+  });
+
+  assert.deepEqual(fake.calls.categoryIds, [[CATEGORY_IDS.explicit]]);
+  assert.ok(fake.calls.categoryIds[0].length <= 1, "mapping lookup count must not exceed row count");
+});
+
+test("Prisma merchant history is user-scoped and hard-capped by a deterministic recent window", async () => {
+  const transaction = prisma.transaction as unknown as {
+    findMany: (args: unknown) => Promise<Array<{ merchant: string; categoryId: string }>>;
+  };
+  const originalFindMany = transaction.findMany;
+  let query: unknown;
+  transaction.findMany = async (args) => {
+    query = args;
+    return Array.from({ length: RECENT_MERCHANT_HISTORY_LIMIT + 5 }, (_, index) => ({
+      merchant: `Merchant ${index}`,
+      categoryId: CATEGORY_IDS.latest,
+    }));
+  };
+
+  try {
+    const history = await prismaImportRepository.findRecentMerchantCategories(
+      "user-private",
+      ["merchant 1"],
+    );
+
+    assert.deepEqual(query, {
+      where: { userId: "user-private", merchant: { not: null } },
+      orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+      take: RECENT_MERCHANT_HISTORY_LIMIT,
+      select: { merchant: true, categoryId: true },
+    });
+    assert.equal(history.length, RECENT_MERCHANT_HISTORY_LIMIT);
+  } finally {
+    transaction.findMany = originalFindMany;
+  }
 });
 
 test("charged-currency rejection exposes only row number and a non-sensitive reason", async () => {
