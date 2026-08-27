@@ -62,6 +62,7 @@ model Transaction {
   // (אוטומציה בלי בחירת קטגוריה ידנית) - null עבור עסקאות שהוזנו ידנית.
   // משמש גם לשיוך קטגוריה אוטומטי לפעם הבאה שאותו בית עסק מופיע.
   merchant          String?
+  merchantKey       String?
   occurredAt        DateTime        @default(now())
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -79,6 +80,7 @@ model Transaction {
   @@index([categoryId])
   @@index([userId])
   @@index([merchant])
+  @@index([userId, merchantKey, occurredAt])
   @@index([importBatchId])
 }
 

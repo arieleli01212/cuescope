@@ -4,6 +4,7 @@ import { getRateToBase } from "./exchangeRate.service";
 import { categoryService } from "./category.service";
 import { AppError } from "@utils/AppError";
 import { CreateTransactionDto, ListTransactionsQuery, UpdateTransactionDto } from "@dto/transaction.dto";
+import { normalizedMerchantKey } from "./import-core";
 
 /** תחילת/סוף חודש לפי מחרוזת "YYYY-MM", ב-UTC (מספיק לדיווח חודשי) */
 function monthRange(month: string): { start: Date; end: Date } {
@@ -35,6 +36,7 @@ export const transactionService = {
         amountBase,
         note: dto.note,
         merchant: dto.merchant,
+        merchantKey: normalizedMerchantKey(dto.merchant),
         occurredAt: dto.occurredAt ?? new Date(),
         categoryId: category.id,
         userId,
@@ -57,9 +59,13 @@ export const transactionService = {
       amountBase = new Prisma.Decimal(amount).mul(exchangeRate);
     }
 
+    const merchantKeyData = dto.merchant !== undefined
+      ? { merchantKey: normalizedMerchantKey(dto.merchant) }
+      : {};
+
     return prisma.transaction.update({
       where: { id },
-      data: { ...dto, exchangeRate, amountBase },
+      data: { ...dto, ...merchantKeyData, exchangeRate, amountBase },
       include: { category: true, user: { select: { id: true, name: true } } },
     });
   },

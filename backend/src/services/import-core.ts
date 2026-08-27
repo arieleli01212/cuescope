@@ -23,6 +23,11 @@ export function canonicalMerchant(value: string): string {
   return value.normalize("NFKC").trim().toLocaleLowerCase("he-IL").replace(/\s+/g, " ");
 }
 
+export function normalizedMerchantKey(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  return canonicalMerchant(value) || null;
+}
+
 function toScaledInteger(value: number, scale: number, label: string): bigint {
   if (!Number.isFinite(value)) throw new Error(`${label} must be finite`);
 

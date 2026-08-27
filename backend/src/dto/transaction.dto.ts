@@ -25,6 +25,7 @@ export const updateTransactionSchema = z.object({
   amount: z.coerce.number().positive().optional(),
   currency: z.enum(["ILS", "USD", "EUR"]).optional(),
   categoryId: z.string().uuid().optional(),
+  merchant: z.string().trim().min(1).max(200).nullable().optional(),
   note: z.string().trim().max(500).nullable().optional(),
   occurredAt: z.coerce.date().optional(),
 });

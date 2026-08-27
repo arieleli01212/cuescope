@@ -8,7 +8,6 @@ import type { z } from "zod";
 import { importRowSchema } from "../src/dto/import.dto";
 import {
   ImportRepository,
-  RECENT_MERCHANT_HISTORY_LIMIT,
   createImportService,
   prepareRows,
   prismaImportRepository,
@@ -118,8 +117,8 @@ test("category suggestions prefer explicit mapping, then latest normalized histo
     async findRecentMerchantCategories(userId?: string, merchantKeys?: readonly string[]) {
       fake.calls.history.push({ userId, merchantKeys });
       return [
-        { merchant: "  KNOWN   shop ", categoryId: CATEGORY_IDS.latest },
-        { merchant: "Known Shop", categoryId: CATEGORY_IDS.old },
+        { merchantKey: "known shop", categoryId: CATEGORY_IDS.latest },
+        { merchantKey: "known shop", categoryId: CATEGORY_IDS.old },
       ];
     },
   });
@@ -179,35 +178,44 @@ test("preview queries category IDs only for canonical mapping keys present in va
   assert.ok(fake.calls.categoryIds[0].length <= 1, "mapping lookup count must not exceed row count");
 });
 
-test("Prisma merchant history is user-scoped and hard-capped by a deterministic recent window", async () => {
-  const transaction = prisma.transaction as unknown as {
-    findMany: (args: unknown) => Promise<Array<{ merchant: string; categoryId: string }>>;
+test("Prisma merchant history targets requested normalized keys for only the authenticated user", async () => {
+  const client = prisma as unknown as {
+    $queryRaw: (query: unknown) => Promise<Array<{ merchantKey: string; categoryId: string }>>;
   };
-  const originalFindMany = transaction.findMany;
+  const originalQueryRaw = client.$queryRaw;
   let query: unknown;
-  transaction.findMany = async (args) => {
-    query = args;
-    return Array.from({ length: RECENT_MERCHANT_HISTORY_LIMIT + 5 }, (_, index) => ({
-      merchant: `Merchant ${index}`,
-      categoryId: CATEGORY_IDS.latest,
-    }));
+  client.$queryRaw = async (input) => {
+    query = input;
+    return [{ merchantKey: "older requested shop", categoryId: CATEGORY_IDS.latest }];
   };
 
   try {
     const history = await prismaImportRepository.findRecentMerchantCategories(
       "user-private",
-      ["merchant 1"],
+      ["older requested shop", "second shop", "older requested shop"],
     );
 
-    assert.deepEqual(query, {
-      where: { userId: "user-private", merchant: { not: null } },
-      orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
-      take: RECENT_MERCHANT_HISTORY_LIMIT,
-      select: { merchant: true, categoryId: true },
-    });
-    assert.equal(history.length, RECENT_MERCHANT_HISTORY_LIMIT);
+    const sql = query as { strings: readonly string[]; values: readonly unknown[] };
+    const statement = sql.strings.join("?").replace(/\s+/g, " ");
+    assert.match(statement, /SELECT DISTINCT ON \(t\."merchantKey"\)/);
+    assert.match(statement, /WHERE t\."userId" = \?/);
+    assert.match(statement, /t\."merchantKey" IN \(\?,\?\)/);
+    assert.match(
+      statement,
+      /ORDER BY t\."merchantKey" ASC, t\."occurredAt" DESC, t\."createdAt" DESC, t\."id" DESC/,
+    );
+    assert.match(statement, /LIMIT \?/);
+    assert.deepEqual(sql.values, [
+      "user-private",
+      "older requested shop",
+      "second shop",
+      2,
+    ]);
+    assert.deepEqual(history, [
+      { merchantKey: "older requested shop", categoryId: CATEGORY_IDS.latest },
+    ]);
   } finally {
-    transaction.findMany = originalFindMany;
+    client.$queryRaw = originalQueryRaw;
   }
 });
 

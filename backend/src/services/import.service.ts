@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 
 import { prisma } from "@database/prisma";
@@ -12,10 +13,6 @@ import {
 
 type ImportRow = z.infer<typeof importRowSchema>;
 type PreviewImportDto = z.infer<typeof previewImportSchema>;
-
-// Merchant normalization is not schema-backed yet. Keep history lookup to one
-// deterministic recent window until a normalized, indexed key is persisted.
-export const RECENT_MERCHANT_HISTORY_LIMIT = 1000;
 
 export interface ImportPreview {
   adapter: typeof IMPORT_ADAPTER;
@@ -36,7 +33,7 @@ export interface ImportRepository {
   findRecentMerchantCategories(
     userId: string,
     merchantKeys: readonly string[],
-  ): Promise<readonly { merchant: string; categoryId: string }[]>;
+  ): Promise<readonly { merchantKey: string; categoryId: string }[]>;
   findExistingCategoryIds(categoryIds: readonly string[]): Promise<Set<string>>;
   resolveFallbackCategory(): Promise<string>;
 }
@@ -70,16 +67,23 @@ export const prismaImportRepository: ImportRepository = {
   },
 
   async findRecentMerchantCategories(userId, merchantKeys) {
-    if (merchantKeys.length === 0) return [];
-    const history = await prisma.transaction.findMany({
-      where: { userId, merchant: { not: null } },
-      orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
-      take: RECENT_MERCHANT_HISTORY_LIMIT,
-      select: { merchant: true, categoryId: true },
-    });
-    return history
-      .flatMap(({ merchant, categoryId }) => merchant ? [{ merchant, categoryId }] : [])
-      .slice(0, RECENT_MERCHANT_HISTORY_LIMIT);
+    const relevantKeys = [...new Set(merchantKeys)].slice(0, 5_000);
+    if (relevantKeys.length === 0) return [];
+
+    return prisma.$queryRaw<Array<{ merchantKey: string; categoryId: string }>>(Prisma.sql`
+      SELECT DISTINCT ON (t."merchantKey")
+        t."merchantKey",
+        t."categoryId"
+      FROM "Transaction" AS t
+      WHERE t."userId" = ${userId}
+        AND t."merchantKey" IN (${Prisma.join(relevantKeys)})
+      ORDER BY
+        t."merchantKey" ASC,
+        t."occurredAt" DESC,
+        t."createdAt" DESC,
+        t."id" DESC
+      LIMIT ${relevantKeys.length}
+    `);
   },
 
   async findExistingCategoryIds(categoryIds) {
@@ -145,7 +149,7 @@ export function createImportService(repository: ImportRepository, baseCurrency: 
 
       const latestCategoryByMerchant = new Map<string, string>();
       for (const item of history) {
-        const key = canonicalMerchant(item.merchant);
+        const key = item.merchantKey;
         if (relevantMerchantKeySet.has(key) && !latestCategoryByMerchant.has(key)) {
           latestCategoryByMerchant.set(key, item.categoryId);
         }
