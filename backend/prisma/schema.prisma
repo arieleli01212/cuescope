@@ -30,11 +30,12 @@ enum Currency {
 // כל בן/בת זוג מזוהה ע"י API key קבוע (מוטבע ב-Shortcut שלו/שלה) - אין צורך
 // בלוגין מלא לשלב ה-MVP, זה משק בית סגור של 2 אנשים.
 model User {
-  id           String        @id @default(uuid())
-  name         String
-  apiKey       String        @unique
-  createdAt    DateTime      @default(now())
-  transactions Transaction[]
+  id            String        @id @default(uuid())
+  name          String
+  apiKey        String        @unique
+  createdAt     DateTime      @default(now())
+  transactions  Transaction[]
+  importBatches ImportBatch[]
 }
 
 model Category {
@@ -50,20 +51,23 @@ model Category {
 // שער ההמרה נשמר כתמונת מצב (snapshot) בזמן הרישום - כדי שדוחות היסטוריים
 // לא ישתנו רטרואקטיבית אם השער מתעדכן מאוחר יותר.
 model Transaction {
-  id           String           @id @default(uuid())
-  type         TransactionType
-  amount       Decimal          @db.Decimal(12, 2)
-  currency     Currency         @default(ILS)
-  exchangeRate Decimal          @default(1) @db.Decimal(12, 6)
-  amountBase   Decimal          @db.Decimal(12, 2) // amount * exchangeRate, במטבע הבסיס
-  note         String?
+  id                String          @id @default(uuid())
+  type              TransactionType
+  amount            Decimal         @db.Decimal(12, 2)
+  currency          Currency        @default(ILS)
+  exchangeRate      Decimal         @default(1) @db.Decimal(12, 6)
+  amountBase        Decimal         @db.Decimal(12, 2) // amount * exchangeRate, במטבע הבסיס
+  note              String?
   // שם בית העסק כפי שהגיע מה-Transaction trigger של Apple Pay ב-Shortcuts
   // (אוטומציה בלי בחירת קטגוריה ידנית) - null עבור עסקאות שהוזנו ידנית.
   // משמש גם לשיוך קטגוריה אוטומטי לפעם הבאה שאותו בית עסק מופיע.
-  merchant     String?
-  occurredAt   DateTime         @default(now())
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  merchant          String?
+  occurredAt        DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  sourceFingerprint String?         @unique
+  importBatchId     String?
+  importBatch       ImportBatch?    @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
 
   category   Category @relation(fields: [categoryId], references: [id])
   categoryId String
@@ -75,6 +79,21 @@ model Transaction {
   @@index([categoryId])
   @@index([userId])
   @@index([merchant])
+  @@index([importBatchId])
+}
+
+model ImportBatch {
+  id            String        @id @default(uuid())
+  adapter       String
+  importedCount Int
+  skippedCount  Int
+  rejectedCount Int
+  createdAt     DateTime      @default(now())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  transactions  Transaction[]
+
+  @@index([userId, createdAt])
 }
 
 // טבלת הגדרות יחידה (singleton) - כרגע רק מטבע הבסיס לתצוגה/חיתוכים.
