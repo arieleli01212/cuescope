@@ -1,0 +1,74 @@
+name: cuescope
+
+services:
+  # ---------- PostgreSQL Database ----------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-cuescope}
+      - POSTGRES_USER=${POSTGRES_USER:-cuescope}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cuescope-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cuescope} -d ${POSTGRES_DB:-cuescope}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+
+  # ---------- Express Backend ---------------------------------------------
+  backend:
+    image: cuescope-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BASE_CURRENCY=${BASE_CURRENCY:-ILS}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - SEED_USER_NAMES=${SEED_USER_NAMES:-Demo User}
+      - SEED_USER_API_KEYS=${SEED_USER_API_KEYS:-local-development-key-change-me}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-cuescope}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cuescope}
+    networks:
+      - cuescope-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ---------- Static Frontend (nginx: static assets + /v1 reverse proxy) --
+  frontend:
+    image: cuescope-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3001}:80"
+    networks:
+      - cuescope-network
+    depends_on:
+      backend:
+        condition: service_healthy
+
+networks:
+  cuescope-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

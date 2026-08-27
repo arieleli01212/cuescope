@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg: #070b14;
+  --surface: #0c1322;
+  --surface-raised: #111b2e;
+  --text: #f7fbff;
+  --muted: #95a3b8;
+  --border: rgba(148, 163, 184, 0.16);
+  --primary: #2dd4a7;
+  --primary-dark: #23b991;
+  --primary-foreground: #071019;
+  --cyan: #38bdf8;
+  --expense-ink: #60a5fa;
+  --expense-foreground: #071019;
+  --critical: #fb7185;
+  --critical-foreground: #071019;
+
+  --series-1: #38bdf8;
+  --series-2: #f59e0b;
+  --series-3: #2dd4a7;
+  --series-4: #a78bfa;
+  --series-5: #f472b6;
+  --series-6: #60a5fa;
+  --series-7: #c084fc;
+  --series-8: #fb7185;
+}
+
+/* עוגן לתיקון חריגות ה-overflow במובייל: אף אלמנט (כרטיס, טבלה, גרף) לא
+   אמור לדחוף רוחב מעבר לviewport; ראה גם `overflow-x-hidden` על מכולות
+   בקומפוננטות ו-`min-w-0` על ילדי flex/grid (הגורם השכיח ביותר לחריגה). */
+html,
+body,
+#root {
+  overflow-x: hidden;
+  width: 100%;
+}
+
+body {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  background:
+    radial-gradient(circle at 88% -10%, rgba(45, 212, 167, 0.1), transparent 32rem),
+    radial-gradient(circle at 10% 8%, rgba(56, 189, 248, 0.07), transparent 30rem),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  transition-duration: 180ms;
+  transition-timing-function: ease-out;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+@layer components {
+  .premium-card {
+    border: 1px solid var(--border);
+    background: linear-gradient(145deg, rgba(17, 27, 46, 0.96), rgba(12, 19, 34, 0.94));
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  }
+
+  .premium-grid {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* קלאס עזר: פלטת סדרות לגרפים (Chart.js צריך מחרוזות צבע, לא var() בכל דפדפן/גרסה) */
+.chart-series-1 { color: var(--series-1); }

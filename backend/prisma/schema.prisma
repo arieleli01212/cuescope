@@ -1,0 +1,84 @@
+// ============================================================================
+// Expenses App — Prisma Schema
+// מערכת לניהול הוצאות/הכנסות משותפת לזוג, עם קלט מ-Apple Shortcuts
+// ============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" בשביל dev מקומי על ה-host (Rocky Linux), ובנוסף debian-openssl-3.0.x
+  // כדי שאותו client שנוצר על ה-host יעבוד גם בתוך קונטיינר node:20-slim -
+  // חוסך צורך לגשת לאינטרנט בזמן docker build (שלא עובד כרגע על המכונה הזו).
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+}
+
+enum Currency {
+  ILS
+  USD
+  EUR
+}
+
+// כל בן/בת זוג מזוהה ע"י API key קבוע (מוטבע ב-Shortcut שלו/שלה) - אין צורך
+// בלוגין מלא לשלב ה-MVP, זה משק בית סגור של 2 אנשים.
+model User {
+  id           String        @id @default(uuid())
+  name         String
+  apiKey       String        @unique
+  createdAt    DateTime      @default(now())
+  transactions Transaction[]
+}
+
+model Category {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  // נושא רחב לאיגוד קטגוריות בדוחות (למשל "מסעדות"+"מכולת"+"קפה" -> "אוכל").
+  // string פשוט ולא טבלה נפרדת בכוונה - קל למלא/לשנות, לא צריך CRUD משלו.
+  group        String?
+  createdAt    DateTime      @default(now())
+  transactions Transaction[]
+}
+
+// שער ההמרה נשמר כתמונת מצב (snapshot) בזמן הרישום - כדי שדוחות היסטוריים
+// לא ישתנו רטרואקטיבית אם השער מתעדכן מאוחר יותר.
+model Transaction {
+  id           String           @id @default(uuid())
+  type         TransactionType
+  amount       Decimal          @db.Decimal(12, 2)
+  currency     Currency         @default(ILS)
+  exchangeRate Decimal          @default(1) @db.Decimal(12, 6)
+  amountBase   Decimal          @db.Decimal(12, 2) // amount * exchangeRate, במטבע הבסיס
+  note         String?
+  // שם בית העסק כפי שהגיע מה-Transaction trigger של Apple Pay ב-Shortcuts
+  // (אוטומציה בלי בחירת קטגוריה ידנית) - null עבור עסקאות שהוזנו ידנית.
+  // משמש גם לשיוך קטגוריה אוטומטי לפעם הבאה שאותו בית עסק מופיע.
+  merchant     String?
+  occurredAt   DateTime         @default(now())
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId String
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@index([occurredAt])
+  @@index([categoryId])
+  @@index([userId])
+  @@index([merchant])
+}
+
+// טבלת הגדרות יחידה (singleton) - כרגע רק מטבע הבסיס לתצוגה/חיתוכים.
+model Settings {
+  id           String   @id @default("singleton")
+  baseCurrency Currency @default(ILS)
+}
