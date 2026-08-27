@@ -103,3 +103,12 @@ test("deriveStatementAmounts rejects an exchange rate outside Decimal(12,6)", ()
     ),
   );
 });
+
+test("deriveStatementAmounts rejects an exchange rate that rounds below Decimal(12,6)", () => {
+  assert.throws(() =>
+    deriveStatementAmounts(
+      { amount: 1_000_000, currency: "USD", chargedAmount: 0.01, chargedCurrency: "ILS" },
+      "ILS",
+    ),
+  );
+});

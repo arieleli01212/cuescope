@@ -96,6 +96,7 @@ export function deriveStatementAmounts(
   const rateNumerator = chargedAmountScaled * rateFactor;
   let rateScaled = rateNumerator / amountScaled;
   if ((rateNumerator % amountScaled) * 2n >= amountScaled) rateScaled += 1n;
+  if (rateScaled < 1n) throw new Error("Exchange rate is below Decimal(12,6) minimum");
   if (rateScaled > RATE_MAX_SCALED) throw new Error("Exchange rate exceeds Decimal(12,6)");
 
   const exchangeRate = Number(formatScaled(rateScaled, RATE_SCALE));
