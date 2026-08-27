@@ -5,6 +5,7 @@ import { authenticate } from "@middleware/authenticate";
 import { errorHandler } from "@middleware/errorHandler";
 import { asyncHandler } from "@utils/asyncHandler";
 import categoryRoutes from "@routes/category.routes";
+import importRoutes from "@routes/import.routes";
 import transactionRoutes from "@routes/transaction.routes";
 import { readVersionInfo } from "./version";
 
@@ -12,10 +13,12 @@ export const app = express();
 
 app.use(cors({ origin: env.CORS_ORIGIN }));
 
-// Normalized import payloads can contain up to 5,000 rows. Keep the larger
-// bound scoped to imports; future import auth/routes belong on this router.
+// Authenticate before parsing the larger normalized import payload. This keeps
+// the extra parsing work and 8 MB allowance private to authenticated imports.
 const importApi = express.Router();
+importApi.use(asyncHandler(authenticate));
 importApi.use(express.json({ limit: "8mb" }));
+importApi.use(importRoutes);
 app.use("/v1/imports", importApi);
 
 app.use(express.json());
