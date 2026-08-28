@@ -255,8 +255,42 @@ const payloadBase = z.object({
 });
 
 export const previewImportSchema = payloadBase;
+
+const rejectedRowSchema = z.object({
+  rowNumber: z.number().int().min(1).max(5000),
+  code: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+}).strict();
+
 export const confirmImportSchema = payloadBase.extend({
-  rejectedCount: z.number().int().min(0).max(5000).default(0),
+  rejectedRows: z.array(rejectedRowSchema).max(5000).default([]),
+}).strict().superRefine((payload, context) => {
+  if (payload.rows.length + payload.rejectedRows.length > 5000) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["rejectedRows"],
+      message: "Combined row count must not exceed 5000",
+    });
+  }
+
+  const validRowNumbers = new Set(payload.rows.map(({ rowNumber }) => rowNumber));
+  const rejectedRowNumbers = new Set<number>();
+  for (const [index, rejectedRow] of payload.rejectedRows.entries()) {
+    if (rejectedRowNumbers.has(rejectedRow.rowNumber)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rejectedRows", index, "rowNumber"],
+        message: "Rejected row numbers must be unique",
+      });
+    }
+    if (validRowNumbers.has(rejectedRow.rowNumber)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rejectedRows", index, "rowNumber"],
+        message: "Rejected row numbers must not identify valid rows",
+      });
+    }
+    rejectedRowNumbers.add(rejectedRow.rowNumber);
+  }
 });
 export const importIdParamsSchema = z.object({ id: z.string().uuid() });
 ~~~
@@ -392,7 +426,10 @@ Commit: feat: preview normalized transaction imports
 Cover:
 
 - confirm repeats fingerprint/category/amount validation;
+- confirm accepts only privacy-safe `{ rowNumber, code }` client rejection metadata,
+  derives its count server-side, and enforces the shared 5,000-row limit;
 - createMany uses skipDuplicates and reports race duplicates from result.count;
+- overlapping concurrent confirmations with reversed fingerprint order do not deadlock;
 - imported amounts use statement amountBase and derived exchangeRate;
 - category mappings override merchant history;
 - unexpected create failure rolls back batch and rows;
@@ -413,9 +450,14 @@ Within one Prisma interactive transaction:
 1. Re-run preparation and category validation.
 2. Remove duplicates already stored and duplicates inside the payload.
 3. Create ImportBatch with temporary zero imported count.
-4. createMany transaction rows with skipDuplicates.
+4. Sort transaction rows by `sourceFingerprint`, then createMany with skipDuplicates.
 5. Update counts using the actual createMany count.
 6. Return batch ID and final counts.
+
+The final rejected count is `rejectedRows.length` plus confirmation-time server
+rejections. Client rejection metadata never includes merchant, amount, or a free-form
+message. Deterministic fingerprint ordering ensures concurrent overlapping
+confirmations acquire unique-index conflicts in the same order.
 
 Each transaction stores:
 

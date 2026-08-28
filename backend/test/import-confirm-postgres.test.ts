@@ -47,7 +47,27 @@ function payload(categoryId: string, reference: string) {
       sourceReferenceHash: reference.repeat(64),
     }],
     categoryMappings: { "synthetic integration merchant": categoryId },
-    rejectedCount: 0,
+    rejectedRows: [],
+  };
+}
+
+function overlappingPayload(categoryId: string, references: readonly string[]) {
+  return {
+    adapter: "credit-card-xlsx-v1" as const,
+    rows: references.map((reference, index) => ({
+      rowNumber: index + 1,
+      occurredAt: "2026-08-27T12:34:56.000Z",
+      merchant: `Synthetic Race Merchant ${reference}`,
+      amount: 10,
+      currency: "USD" as const,
+      chargedAmount: 37.5,
+      chargedCurrency: "ILS" as const,
+      sourceReferenceHash: reference.repeat(64),
+    })),
+    categoryMappings: Object.fromEntries(
+      references.map((reference) => [`synthetic race merchant ${reference}`, categoryId]),
+    ),
+    rejectedRows: [],
   };
 }
 
@@ -86,6 +106,43 @@ test("PostgreSQL race duplicates use the actual createMany count", async (t) => 
     assert.deepEqual(batches.map(({ importedCount }) => importedCount).sort(), [0, 1]);
     assert.deepEqual(batches.map(({ skippedCount }) => skippedCount).sort(), [0, 1]);
   } finally {
+    await cleanup(client, [owner.id, other.id], category.id);
+    await client.$disconnect();
+  }
+});
+
+test("PostgreSQL overlapping confirms cannot deadlock when fingerprints arrive in reverse order", async (t) => {
+  const client = await connectedClient(t);
+  if (!client) return;
+  const { owner, other, category } = await fixture(client);
+  const identifier = `task4_race_${randomUUID().replaceAll("-", "")}`;
+  try {
+    await client.$executeRawUnsafe(`
+      CREATE FUNCTION "${identifier}"() RETURNS trigger AS $$
+      BEGIN
+        IF NEW."userId" = '${owner.id}' THEN
+          PERFORM pg_sleep(0.05);
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await client.$executeRawUnsafe(`
+      CREATE TRIGGER "${identifier}" BEFORE INSERT ON "Transaction"
+      FOR EACH ROW EXECUTE FUNCTION "${identifier}"()
+    `);
+    const service = createImportService(createPrismaImportRepository(client), "ILS");
+    const results = await Promise.all([
+      service.confirm(owner.id, overlappingPayload(category.id, ["e", "f"])),
+      service.confirm(owner.id, overlappingPayload(category.id, ["f", "e"])),
+    ]);
+
+    assert.equal(results.reduce((sum, result) => sum + result.importedCount, 0), 2);
+    assert.equal(results.reduce((sum, result) => sum + result.skippedCount, 0), 2);
+    assert.equal(await client.transaction.count({ where: { userId: owner.id } }), 2);
+  } finally {
+    await client.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${identifier}" ON "Transaction"`);
+    await client.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${identifier}"()`);
     await cleanup(client, [owner.id, other.id], category.id);
     await client.$disconnect();
   }

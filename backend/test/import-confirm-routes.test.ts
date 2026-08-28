@@ -74,6 +74,31 @@ test("POST and DELETE authenticate before parsing and return privacy-safe valida
     assert.equal(confirmEnvelope.error.message, "Invalid request data");
     assert.doesNotMatch(JSON.stringify(confirmEnvelope), /Sensitive Merchant|9876\.54/);
 
+    const fabricatedRejectedCount = await fetch(baseUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": "valid-test-key" },
+      body: JSON.stringify({
+        adapter: "credit-card-xlsx-v1",
+        rows: [{
+          rowNumber: 1,
+          occurredAt: "2026-08-27T12:34:56.000Z",
+          merchant: "Sensitive Merchant",
+          amount: 10,
+          currency: "USD",
+          chargedAmount: 37.5,
+          chargedCurrency: "ILS",
+          sourceReferenceHash: "a".repeat(64),
+        }],
+        categoryMappings: {},
+        rejectedCount: 5_000,
+      }),
+    });
+    assert.equal(fabricatedRejectedCount.status, 400);
+    const fabricatedCountEnvelope = await fabricatedRejectedCount.json();
+    assert.equal(fabricatedCountEnvelope.error.code, "VALIDATION_ERROR");
+    assert.equal(fabricatedCountEnvelope.error.message, "Invalid request data");
+    assert.doesNotMatch(JSON.stringify(fabricatedCountEnvelope), /Sensitive Merchant|5000/);
+
     const invalidUndo = await fetch(`${baseUrl}/private-batch-name`, {
       method: "DELETE",
       headers: { "x-api-key": "valid-test-key" },

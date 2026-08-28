@@ -337,7 +337,7 @@ export function createImportService(
           skippedCount: 0,
           rejectedCount: 0,
         });
-        const rows: ImportTransactionRow[] = analysis.candidates.map((candidate) => {
+        const rows = analysis.candidates.map<ImportTransactionRow>((candidate) => {
           const amounts = deriveStatementAmounts(candidate.row, baseCurrency);
           return {
             type: "EXPENSE",
@@ -351,10 +351,14 @@ export function createImportService(
             importBatchId: batch.id,
             sourceFingerprint: candidate.fingerprint,
           };
+        }).sort((left, right) => {
+          if (left.sourceFingerprint < right.sourceFingerprint) return -1;
+          if (left.sourceFingerprint > right.sourceFingerprint) return 1;
+          return 0;
         });
         const importedCount = await transactionRepository.createTransactions(rows);
         const skippedCount = analysis.duplicateCount + rows.length - importedCount;
-        const rejectedCount = dto.rejectedCount + analysis.rejected.length;
+        const rejectedCount = dto.rejectedRows.length + analysis.rejected.length;
         await transactionRepository.updateBatchCounts(batch.id, userId, {
           importedCount,
           skippedCount,

@@ -33,7 +33,7 @@ test("import row accepts the canonical shape and trims merchant", () => {
 
 test("preview and confirm require one to 5,000 rows", () => {
   assert.equal(previewImportSchema.parse(validPayload).rows.length, 1);
-  assert.equal(confirmImportSchema.parse(validPayload).rejectedCount, 0);
+  assert.deepEqual(confirmImportSchema.parse(validPayload).rejectedRows, []);
   assert.equal(previewImportSchema.safeParse({ ...validPayload, rows: [] }).success, false);
   assert.equal(confirmImportSchema.safeParse({ ...validPayload, rows: [] }).success, false);
   assert.equal(
@@ -41,6 +41,44 @@ test("preview and confirm require one to 5,000 rows", () => {
       .success,
     false,
   );
+});
+
+test("confirm accepts only bounded, privacy-safe rejected-row metadata", () => {
+  assert.deepEqual(confirmImportSchema.parse({
+    ...validPayload,
+    rejectedRows: [
+      { rowNumber: 2, code: "INVALID_AMOUNT" },
+      { rowNumber: 3, code: "UNSUPPORTED_ROW_V2" },
+    ],
+  }).rejectedRows, [
+    { rowNumber: 2, code: "INVALID_AMOUNT" },
+    { rowNumber: 3, code: "UNSUPPORTED_ROW_V2" },
+  ]);
+
+  const invalidPayloads = [
+    { ...validPayload, rejectedCount: 4 },
+    { ...validPayload, rejectedRows: [{ rowNumber: 2, code: "invalid_amount" }] },
+    { ...validPayload, rejectedRows: [{ rowNumber: 2, code: "INVALID-AMOUNT" }] },
+    { ...validPayload, rejectedRows: [{ rowNumber: 2, code: "A".repeat(65) }] },
+    { ...validPayload, rejectedRows: [{ rowNumber: 2, code: "INVALID_AMOUNT", message: "secret" }] },
+    {
+      ...validPayload,
+      rejectedRows: [
+        { rowNumber: 2, code: "INVALID_AMOUNT" },
+        { rowNumber: 2, code: "UNSUPPORTED_ROW" },
+      ],
+    },
+    { ...validPayload, rejectedRows: [{ rowNumber: validRow.rowNumber, code: "INVALID_AMOUNT" }] },
+    {
+      ...validPayload,
+      rows: Array.from({ length: 5_000 }, () => validRow),
+      rejectedRows: [{ rowNumber: 2, code: "INVALID_AMOUNT" }],
+    },
+  ];
+
+  for (const payload of invalidPayloads) {
+    assert.equal(confirmImportSchema.safeParse(payload).success, false);
+  }
 });
 
 test("row validation rejects invalid hashes, amounts, dates, row numbers, and currencies", () => {

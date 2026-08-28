@@ -127,7 +127,10 @@ test("confirm revalidates amounts, fingerprints, categories, and duplicate rows"
     adapter: "credit-card-xlsx-v1",
     rows,
     categoryMappings: { "missing category": CATEGORY.explicit },
-    rejectedCount: 2,
+    rejectedRows: [
+      { rowNumber: 7, code: "UNSUPPORTED_ROW" },
+      { rowNumber: 8, code: "INVALID_AMOUNT" },
+    ],
   });
 
   assert.deepEqual(result, {
@@ -138,8 +141,8 @@ test("confirm revalidates amounts, fingerprints, categories, and duplicate rows"
     rejectedCount: 4,
   });
   assert.deepEqual(fake.state.transactions.map(({ merchant, categoryId }) => ({ merchant, categoryId })), [
-    { merchant: "Payload duplicate", categoryId: CATEGORY.fallback },
     { merchant: "History shop", categoryId: CATEGORY.history },
+    { merchant: "Payload duplicate", categoryId: CATEGORY.fallback },
   ]);
 });
 
@@ -153,7 +156,7 @@ test("confirmation stores the exact statement and ownership fields with explicit
     adapter: "credit-card-xlsx-v1",
     rows: [input],
     categoryMappings: { "demo shop": CATEGORY.explicit },
-    rejectedCount: 0,
+    rejectedRows: [],
   }));
 
   const fingerprint = prepareRows("user-1", [{ ...input, merchant: "Demo   Shop" }])[0].fingerprint;
@@ -180,7 +183,7 @@ test("createMany race duplicates use skipDuplicates semantics and the actual ins
     adapter: "credit-card-xlsx-v1",
     rows: [row(), row({ rowNumber: 2, sourceReferenceHash: "b".repeat(64) })],
     categoryMappings: {},
-    rejectedCount: 0,
+    rejectedRows: [],
   });
 
   assert.equal(fake.state.transactions.length, 2, "all candidates reach one createMany call");
@@ -195,6 +198,25 @@ test("createMany race duplicates use skipDuplicates semantics and the actual ins
   }]);
 });
 
+test("confirmation inserts candidates in deterministic fingerprint order", async () => {
+  const fake = transactionalRepository();
+  const rows = [
+    row({ rowNumber: 1, merchant: "Zulu", sourceReferenceHash: "f".repeat(64) }),
+    row({ rowNumber: 2, merchant: "Alpha", sourceReferenceHash: "0".repeat(64) }),
+    row({ rowNumber: 3, merchant: "Middle", sourceReferenceHash: "7".repeat(64) }),
+  ];
+
+  await createImportService(fake.repository, "ILS").confirm("user-1", {
+    adapter: "credit-card-xlsx-v1",
+    rows,
+    categoryMappings: {},
+    rejectedRows: [],
+  });
+
+  const fingerprints = fake.state.transactions.map(({ sourceFingerprint }) => sourceFingerprint);
+  assert.deepEqual(fingerprints, [...fingerprints].sort());
+});
+
 test("an unexpected transaction-row failure commits neither the batch nor rows", async () => {
   const fake = transactionalRepository({ createError: new Error("database unavailable") });
 
@@ -203,7 +225,7 @@ test("an unexpected transaction-row failure commits neither the batch nor rows",
       adapter: "credit-card-xlsx-v1",
       rows: [row()],
       categoryMappings: {},
-      rejectedCount: 0,
+      rejectedRows: [],
     }),
     /database unavailable/,
   );

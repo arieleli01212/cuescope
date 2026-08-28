@@ -110,7 +110,9 @@ Authenticated endpoints:
 - `POST /v1/imports/preview` validates normalized candidates, suggests categories,
   and reports duplicates.
 - `POST /v1/imports` repeats all validation and atomically creates the batch and
-  non-duplicate transactions.
+  non-duplicate transactions. It accepts bounded client rejection metadata containing
+  only `{ rowNumber, code }`; the backend derives the client-side rejected count from
+  that array and adds any confirmation-time server rejections.
 - `DELETE /v1/imports/:id` deletes the authenticated user's imported transactions
   and batch atomically.
 
@@ -119,15 +121,23 @@ transactions or another user's batch.
 
 ## Error handling and limits
 
-Both browser and backend enforce 5,000 normalized rows. The API also enforces a
-bounded JSON request size. Invalid adapter, malformed dates, unsupported currencies,
-zero/negative amounts, inconsistent charged currency, and invalid category mappings
-produce row-level rejection reasons. Authentication, ownership, and request-shape
-failures use the existing API error envelope.
+Both browser and backend enforce 5,000 combined valid and rejected normalized rows.
+Rejected row numbers are unique and disjoint from valid row numbers. Rejection codes
+are bounded uppercase identifiers; client rejection metadata cannot contain merchant,
+amount, or free-form messages. The API also enforces a bounded JSON request size.
+Invalid adapter, malformed dates, unsupported currencies, zero/negative amounts,
+inconsistent charged currency, and invalid category mappings produce row-level
+rejection reasons. Authentication, ownership, and request-shape failures use the
+existing API error envelope.
 
 The confirmed import is atomic: an unexpected database or validation error commits
 neither the batch nor any transaction. Expected duplicates and pre-reviewed rejected
 rows do not abort valid rows; their final counts are recorded.
+
+Before the bulk insert, confirmation sorts candidates by authoritative
+`sourceFingerprint`. Overlapping concurrent confirmations therefore encounter unique
+index conflicts in a deterministic order and avoid reversed-order deadlocks while
+preserving exact `createMany` result-count semantics.
 
 ## Testing
 
@@ -138,6 +148,7 @@ All committed fixtures are synthetic. Tests cover:
 - statement summary/footer rows and malformed rows;
 - deterministic canonical fingerprints;
 - duplicates inside one payload, repeated files, and overlapping statements;
+- reversed-order overlapping PostgreSQL confirmations and exact race counts;
 - category precedence and fallback;
 - atomic import and owner-scoped undo;
 - file validation, preview, mapping, confirmation, partial rejection, and undo UI;
