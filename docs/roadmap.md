@@ -10,6 +10,7 @@ CueScope is built around a simple promise: show households what is changing in t
 - Multi-currency normalization with historical rate snapshots
 - REST ingestion suitable for Apple Shortcuts and other automations
 - Merchant-based reuse of prior categorization
+- Local import of Hebrew credit-card XLSX statements, with private browser-side parsing, preview, category mapping, idempotent confirmation, and undo
 
 ## Next milestones
 

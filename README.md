@@ -12,6 +12,7 @@ The project is an early working release. Transaction management, categorization,
 - Responsive web dashboard with monthly totals and category charts
 - Transaction creation, editing, deletion, filtering, and notes
 - Merchant-aware categorization for transactions submitted by automations such as Apple Shortcuts
+- Local import of Hebrew credit-card XLSX statements, with a private preview, per-merchant category mapping, idempotent confirmation, and one-click undo
 - ILS, USD, and EUR normalization with exchange-rate snapshots
 - Per-user API keys and a small REST API
 - Self-hosted deployment with Docker Compose
@@ -106,8 +107,19 @@ Every endpoint except `/health` requires an `X-API-Key` header.
 - `GET|POST /v1/transactions`
 - `PATCH|DELETE /v1/transactions/:id`
 - `GET /v1/transactions/summary?month=YYYY-MM`
+- `POST /v1/imports/preview` / `POST /v1/imports` / `DELETE /v1/imports/:id`
 
 `GET /v1/transactions` accepts `month`, `categoryId`, `userId`, and `type` filters.
+
+## File import
+
+The Transactions tab can import the approved Hebrew credit-card XLSX statement format directly from the browser:
+
+- The browser parses the `.xlsx` file locally (up to 5 MB, 5,000 data rows) with a format-specific adapter and sends only normalized rows to the backend.
+- The raw workbook, filename, voucher number, and extra-detail column are never uploaded, stored, or logged.
+- Rows are previewed before import: merchant category suggestions (explicit mapping, merchant history, or a fallback category), duplicate detection, and row-level rejections (row number and reason only, never merchant or amount).
+- Confirming an import is idempotent (a fingerprint per user/row prevents duplicate transactions) and reversible: undoing a batch removes exactly the transactions it created.
+- Only local file adapters are supported today; consent-based bank/card synchronization through licensed providers remains a planned, separate feature (see the roadmap).
 
 ## Roadmap
 

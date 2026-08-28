@@ -8,6 +8,8 @@ Please use GitHub private vulnerability reporting for the repository. Do not ope
 
 Include the affected version or commit, reproduction steps, impact, and any suggested mitigation. Do not include real banking credentials, API keys, account identifiers, or transaction exports.
 
+Do not attach real credit-card statements, XLSX exports, or screenshots of them to public issues or vulnerability reports, even when reporting an import bug. File import parses the workbook entirely in the browser: the raw file, filename, voucher number, and extra-detail column are never uploaded, stored, or logged, so a synthetic file with fake merchants and amounts is sufficient to reproduce most import issues.
+
 ## Supported versions
 
 CueScope is currently pre-1.0. Security fixes are applied to the latest commit on `main`; older commits are not maintained as supported releases.
