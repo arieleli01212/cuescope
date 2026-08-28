@@ -19,8 +19,14 @@ export interface FingerprintRow {
   sourceReferenceHash: string;
 }
 
+// Merchant identity is intentionally code-point conservative and reproducible
+// in PostgreSQL: lowercase ASCII A-Z, collapse ASCII whitespace, and leave every
+// non-ASCII code point unchanged.
 export function canonicalMerchant(value: string): string {
-  return value.normalize("NFKC").trim().toLocaleLowerCase("he-IL").replace(/\s+/g, " ");
+  return value
+    .replace(/[A-Z]/g, (character) => String.fromCharCode(character.charCodeAt(0) + 32))
+    .replace(/[\u0009-\u000D\u0020]+/g, " ")
+    .replace(/^ | $/g, "");
 }
 
 export function normalizedMerchantKey(value: string | null | undefined): string | null {

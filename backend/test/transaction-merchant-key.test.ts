@@ -41,8 +41,11 @@ test("transaction schema and migration persist and index normalized merchant key
   assert.match(migration, /UPDATE "Transaction"[\s\S]*WHERE "merchant" IS NOT NULL/i);
   assert.match(
     migration,
-    /SET "merchantKey"\s*=\s*NULLIF\(\s*LOWER\(BTRIM\(REGEXP_REPLACE\(NORMALIZE\("merchant",\s*NFKC\),\s*'\\s\+',\s*' ',\s*'g'\)\)\),\s*''\s*\)/i,
+    /TRANSLATE\(\s*"merchant",\s*'ABCDEFGHIJKLMNOPQRSTUVWXYZ',\s*'abcdefghijklmnopqrstuvwxyz'\s*\)/i,
   );
+  assert.match(migration, /U&'\[\\0009-\\000D\\0020\]\+'/);
+  assert.match(migration, /BTRIM\([\s\S]*,\s*' '\s*\)/i);
+  assert.doesNotMatch(migration, /\b(?:NORMALIZE|LOWER)\s*\(|'\\s\+'/i);
   assert.match(
     migration,
     /CREATE INDEX "Transaction_userId_merchantKey_occurredAt_idx"\s+ON "Transaction"\("userId",\s*"merchantKey",\s*"occurredAt"\)/,

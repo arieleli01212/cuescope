@@ -40,8 +40,10 @@ independent of card billing cycles.
 All comparisons use `amountBase` so currencies are comparable.
 
 Transactions are grouped by category ID and by a conservative merchant key. Merchant
-normalization applies Unicode/case normalization, trimming, and whitespace collapse
-only. Fuzzy merchant merging is intentionally deferred.
+normalization lowercases ASCII A-Z and collapses or trims only ASCII whitespace
+U+0009..U+000D and U+0020. All non-ASCII code points remain unchanged so application
+and database backfill semantics are identical. Fuzzy merchant merging is intentionally
+deferred.
 
 For each bucket:
 

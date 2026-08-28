@@ -89,6 +89,10 @@ The backend computes the authoritative SHA-256 fingerprint from a canonical form
 - charged amount and currency;
 - voucher number.
 
+Merchant canonicalization lowercases ASCII A-Z and collapses or trims only ASCII
+whitespace U+0009..U+000D and U+0020. It intentionally preserves every non-ASCII
+code point so JavaScript fingerprinting and PostgreSQL history backfills agree.
+
 The database stores only the fingerprint. A nullable unique transaction field
 prevents duplicates across overlapping statements and repeated submissions. The
 preview reports currently known duplicates, but the confirmed import recalculates
@@ -149,4 +153,3 @@ Work happens on `feat/file-import-v1` from public `main`, with small TDD commits
 public PR must pass backend, frontend, and Compose checks plus review. Production is
 unchanged until Ariel separately approves transferring the feature to the private
 repository and deploying it.
-

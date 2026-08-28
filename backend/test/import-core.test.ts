@@ -6,9 +6,12 @@ import {
   computeImportFingerprint,
   deriveStatementAmounts,
 } from "../src/services/import-core";
+import { merchantCanonicalizationCorpus } from "./merchant-key-corpus";
 
-test("canonicalMerchant normalizes case and whitespace conservatively", () => {
-  assert.equal(canonicalMerchant("  Demo   SHOP  "), "demo shop");
+test("canonicalMerchant follows the conservative code-point corpus", () => {
+  for (const { input, expected } of merchantCanonicalizationCorpus) {
+    assert.equal(canonicalMerchant(input), expected, JSON.stringify(input));
+  }
 });
 
 test("computeImportFingerprint is stable and changes across users", () => {

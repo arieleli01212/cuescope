@@ -3,11 +3,24 @@
 ALTER TABLE "Transaction"
 ADD COLUMN "merchantKey" TEXT;
 
--- Match application canonicalization for stored merchant names: collapse all
--- whitespace, trim the result, lowercase it, and keep empty values nullable.
+-- Match application canonicalization exactly: lowercase ASCII A-Z, collapse and
+-- trim only ASCII whitespace U+0009..U+000D and U+0020, preserve every other
+-- code point unchanged, and keep empty values nullable.
 UPDATE "Transaction"
 SET "merchantKey" = NULLIF(
-    LOWER(BTRIM(REGEXP_REPLACE(NORMALIZE("merchant", NFKC), '\s+', ' ', 'g'))),
+    BTRIM(
+        REGEXP_REPLACE(
+            TRANSLATE(
+                "merchant",
+                'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                'abcdefghijklmnopqrstuvwxyz'
+            ),
+            U&'[\0009-\000D\0020]+',
+            ' ',
+            'g'
+        ),
+        ' '
+    ),
     ''
 )
 WHERE "merchant" IS NOT NULL;

@@ -30,8 +30,9 @@ import {
   deriveStatementAmounts,
 } from "../src/services/import-core";
 
-test("canonicalMerchant normalizes case and whitespace conservatively", () => {
-  assert.equal(canonicalMerchant("  Demo   SHOP  "), "demo shop");
+test("canonicalMerchant normalizes ASCII case and whitespace conservatively", () => {
+  assert.equal(canonicalMerchant("  Demo\t SHOP  "), "demo shop");
+  assert.equal(canonicalMerchant("  ΟΣ İ  "), "ΟΣ İ");
 });
 
 test("computeImportFingerprint is stable and changes across users", () => {
@@ -101,7 +102,10 @@ export interface FingerprintRow {
 }
 
 export function canonicalMerchant(value: string): string {
-  return value.normalize("NFKC").trim().toLocaleLowerCase("he-IL").replace(/\s+/g, " ");
+  return value
+    .replace(/[A-Z]/g, (character) => String.fromCharCode(character.charCodeAt(0) + 32))
+    .replace(/[\u0009-\u000D\u0020]+/g, " ")
+    .replace(/^ | $/g, "");
 }
 
 function canonicalNumber(value: number): string {
