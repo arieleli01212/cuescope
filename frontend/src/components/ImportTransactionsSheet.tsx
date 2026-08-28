@@ -220,7 +220,11 @@ function ImportTransactionsForm({ categories, onPreview, onConfirm, onUndo, onIm
                   <li key={group.key} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border p-3">
                     <div className="min-w-0">
                       <p className="truncate font-medium">{group.displayName}</p>
-                      <p className="text-xs text-muted">{group.rowCount} עסקאות</p>
+                      <p className="text-xs text-muted">
+                        {group.rowCount} עסקאות
+                        {group.suggestionSource === "ai" && " · הצעת AI, מומלץ לבדוק"}
+                        {group.suggestionSource === "history" && " · לפי היסטוריה"}
+                      </p>
                     </div>
                     <Select
                       value={categoryMappings[group.key] ?? group.suggestedCategoryId}

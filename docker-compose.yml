@@ -38,6 +38,8 @@ services:
       - SEED_USER_NAMES=${SEED_USER_NAMES:-Demo User}
       - SEED_USER_API_KEYS=${SEED_USER_API_KEYS:-local-development-key-change-me}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-cuescope}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cuescope}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-minimax/minimax-m3:free}
     networks:
       - cuescope-network
     depends_on:

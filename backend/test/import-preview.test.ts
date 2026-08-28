@@ -262,6 +262,116 @@ test("missing mapped categories reject affected rows without echoing row values"
   assert.equal(fake.calls.categoryIds.length, 1);
 });
 
+test("preview uses the AI suggester for fallback merchants and reports suggestionSource ai", async () => {
+  const fake = repository({
+    async findAllCategories() {
+      return [
+        { id: CATEGORY_IDS.fallback, name: "אחר" },
+        { id: CATEGORY_IDS.latest, name: "מכולת" },
+      ];
+    },
+  });
+  let receivedMerchant: string | undefined;
+  let receivedCategories: readonly string[] | undefined;
+  const preview = await createImportService(fake.value, "ILS", {
+    async suggest(merchant, categoryNames) {
+      receivedMerchant = merchant;
+      receivedCategories = categoryNames;
+      return "מכולת";
+    },
+  }).preview("user-1", {
+    adapter: "credit-card-xlsx-v1",
+    rows: [row({ merchant: "Demo Grocery" })],
+    categoryMappings: {},
+  });
+
+  assert.equal(receivedMerchant, "Demo Grocery");
+  // The fallback category ("אחר") must never be offered to the model.
+  assert.deepEqual(receivedCategories, ["מכולת"]);
+  assert.deepEqual(preview.merchantGroups, [{
+    key: "demo grocery",
+    displayName: "Demo Grocery",
+    rowCount: 1,
+    suggestedCategoryId: CATEGORY_IDS.latest,
+    suggestionSource: "ai",
+  }]);
+});
+
+test("preview falls back to אחר when the AI suggester finds no match", async () => {
+  const fake = repository({
+    async findAllCategories() {
+      return [{ id: CATEGORY_IDS.fallback, name: "אחר" }, { id: CATEGORY_IDS.latest, name: "מכולת" }];
+    },
+  });
+  const preview = await createImportService(fake.value, "ILS", {
+    async suggest() {
+      return null;
+    },
+  }).preview("user-1", {
+    adapter: "credit-card-xlsx-v1",
+    rows: [row({ merchant: "Unknown Shop" })],
+    categoryMappings: {},
+  });
+
+  assert.deepEqual(preview.merchantGroups[0], {
+    key: "unknown shop",
+    displayName: "Unknown Shop",
+    rowCount: 1,
+    suggestedCategoryId: CATEGORY_IDS.fallback,
+    suggestionSource: "fallback",
+  });
+});
+
+test("preview never calls the AI suggester when no repository category listing is available", async () => {
+  const fake = repository();
+  let called = false;
+  const preview = await createImportService(fake.value, "ILS", {
+    async suggest() {
+      called = true;
+      return "מכולת";
+    },
+  }).preview("user-1", {
+    adapter: "credit-card-xlsx-v1",
+    rows: [row({ merchant: "Demo Shop" })],
+    categoryMappings: {},
+  });
+
+  assert.equal(called, false);
+  assert.equal(preview.merchantGroups[0].suggestionSource, "fallback");
+});
+
+test("preview preserves original merchant order across explicit, history, ai, and fallback groups", async () => {
+  const fake = repository({
+    async findRecentMerchantCategories() {
+      return [{ merchantKey: "history shop", categoryId: CATEGORY_IDS.old }];
+    },
+    async findAllCategories() {
+      return [{ id: CATEGORY_IDS.fallback, name: "אחר" }, { id: CATEGORY_IDS.latest, name: "מכולת" }];
+    },
+  });
+  const preview = await createImportService(fake.value, "ILS", {
+    async suggest(merchant) {
+      return merchant === "AI Shop" ? "מכולת" : null;
+    },
+  }).preview("user-1", {
+    adapter: "credit-card-xlsx-v1",
+    rows: [
+      row({ merchant: "Explicit Shop", sourceReferenceHash: "a".repeat(64) }),
+      row({ rowNumber: 2, merchant: "History Shop", sourceReferenceHash: "b".repeat(64) }),
+      row({ rowNumber: 3, merchant: "AI Shop", sourceReferenceHash: "c".repeat(64) }),
+      row({ rowNumber: 4, merchant: "Plain Shop", sourceReferenceHash: "d".repeat(64) }),
+    ],
+    categoryMappings: { "explicit shop": CATEGORY_IDS.explicit },
+  });
+
+  assert.deepEqual(preview.merchantGroups.map(({ key, suggestionSource }) => ({ key, suggestionSource })), [
+    { key: "explicit shop", suggestionSource: "explicit" },
+    { key: "history shop", suggestionSource: "history" },
+    { key: "ai shop", suggestionSource: "ai" },
+    { key: "plain shop", suggestionSource: "fallback" },
+  ]);
+});
+
 test("import router authenticates before its route-specific 8mb JSON parser", () => {
   const appSource = readFileSync(path.join(__dirname, "..", "src", "app.ts"), "utf8");
   const auth = appSource.indexOf("importApi.use(asyncHandler(authenticate))");

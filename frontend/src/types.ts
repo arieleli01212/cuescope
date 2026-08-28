@@ -43,7 +43,7 @@ export interface Me {
 }
 
 export type ImportAdapter = "credit-card-xlsx-v1";
-export type ImportSuggestionSource = "explicit" | "history" | "fallback";
+export type ImportSuggestionSource = "explicit" | "history" | "ai" | "fallback";
 
 export interface ImportRowPayload {
   rowNumber: number;

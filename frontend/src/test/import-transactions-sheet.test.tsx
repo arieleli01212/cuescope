@@ -183,6 +183,24 @@ it("shows a visible count of merchant groups without a historical or explicit ma
   expect(await screen.findByText("1 בתי עסק ללא שיוך קודם, ישויכו ל\"אחר\"")).toBeVisible();
 });
 
+it("labels an AI-suggested category so the user knows to double-check it", async () => {
+  const user = userEvent.setup();
+  vi.mocked(creditCardXlsxAdapter.parse).mockResolvedValue(parsedFile());
+  renderSheet({
+    onPreview: vi.fn().mockResolvedValue(previewResponse({
+      merchantGroups: [
+        { key: "demo shop", displayName: "Demo Shop", rowCount: 1, suggestedCategoryId: "groceries", suggestionSource: "ai" },
+      ],
+    })),
+  });
+
+  await user.upload(screen.getByLabelText("בחירת קובץ ייבוא"), xlsxFile());
+
+  expect(await screen.findByText(/הצעת AI/)).toBeVisible();
+  // An AI suggestion isn't counted as "unmapped" - it already has a category.
+  expect(screen.queryByText(/ללא שיוך קודם/)).not.toBeInTheDocument();
+});
+
 it("shows rejected rows with only their row number and reason", async () => {
   const user = userEvent.setup();
   vi.mocked(creditCardXlsxAdapter.parse).mockResolvedValue(parsedFile({

@@ -5,6 +5,11 @@ import { prisma } from "@database/prisma";
 import { confirmImportSchema, importRowSchema, previewImportSchema } from "@dto/import.dto";
 import { AppError } from "@utils/AppError";
 import {
+  type AiCategorySuggester,
+  configuredCategorySuggester,
+  noopCategorySuggester,
+} from "./ai-category-suggestion";
+import {
   canonicalMerchant,
   computeImportFingerprint,
   deriveStatementAmounts,
@@ -26,7 +31,7 @@ export interface ImportPreview {
     displayName: string;
     rowCount: number;
     suggestedCategoryId: string;
-    suggestionSource: "explicit" | "history" | "fallback";
+    suggestionSource: "explicit" | "history" | "ai" | "fallback";
   }>;
 }
 
@@ -38,6 +43,9 @@ export interface ImportRepository {
   ): Promise<readonly { merchantKey: string; categoryId: string }[]>;
   findExistingCategoryIds(categoryIds: readonly string[]): Promise<Set<string>>;
   resolveFallbackCategory(): Promise<string>;
+  // Optional: only used to offer the AI category suggester a name list, so
+  // repositories that never enable AI suggestions don't need to implement it.
+  findAllCategories?(): Promise<readonly { id: string; name: string }[]>;
 }
 
 export interface ImportTransactionRow {
@@ -149,6 +157,10 @@ function createPrismaReadRepository(client: ImportPrismaClient): ImportRepositor
         select: { id: true },
       });
       return category.id;
+    },
+
+    async findAllCategories() {
+      return client.category.findMany({ select: { id: true, name: true } });
     },
   };
 }
@@ -288,6 +300,7 @@ async function analyzeRows(
 export function createImportService(
   repository: ImportRepository & Partial<ImportWriteRepository>,
   baseCurrency: ImportCurrency,
+  aiSuggester: AiCategorySuggester = noopCategorySuggester,
 ) {
   return {
     async preview(userId: string, dto: PreviewImportDto): Promise<ImportPreview> {
@@ -300,22 +313,51 @@ export function createImportService(
         else grouped.set(candidate.merchantKey, { displayName: candidate.row.merchant, rowCount: 1 });
       }
 
-      const merchantGroups: ImportPreview["merchantGroups"] = [...grouped].map(([key, group]) => {
+      type MerchantGroupEntry = ImportPreview["merchantGroups"][number];
+      const resolved = new Map<string, MerchantGroupEntry>();
+      const fallbackKeys: string[] = [];
+      let fallbackCategoryId: string | undefined;
+
+      for (const [key, group] of grouped) {
         const explicit = analysis.explicitMappings.get(key);
         if (explicit) {
-          return { key, ...group, suggestedCategoryId: explicit, suggestionSource: "explicit" };
+          resolved.set(key, { key, ...group, suggestedCategoryId: explicit, suggestionSource: "explicit" });
+          continue;
         }
         const historical = analysis.latestCategoryByMerchant.get(key);
         if (historical) {
-          return { key, ...group, suggestedCategoryId: historical, suggestionSource: "history" };
+          resolved.set(key, { key, ...group, suggestedCategoryId: historical, suggestionSource: "history" });
+          continue;
         }
-        return {
-          key,
-          ...group,
-          suggestedCategoryId: analysis.candidates.find(({ merchantKey }) => merchantKey === key)!.categoryId,
-          suggestionSource: "fallback",
-        };
-      });
+        fallbackCategoryId = analysis.candidates.find(({ merchantKey }) => merchantKey === key)!.categoryId;
+        resolved.set(key, { key, ...group, suggestedCategoryId: fallbackCategoryId, suggestionSource: "fallback" });
+        fallbackKeys.push(key);
+      }
+
+      if (
+        fallbackKeys.length > 0
+        && aiSuggester !== noopCategorySuggester
+        && repository.findAllCategories
+        && fallbackCategoryId
+      ) {
+        const categories = await repository.findAllCategories();
+        // Never offer the fallback bucket itself as an AI choice - the model
+        // should either find a real category or say NONE, not just echo אחר.
+        const offered = categories.filter(({ id }) => id !== fallbackCategoryId);
+        const categoryIdByName = new Map(offered.map(({ id, name }) => [name, id]));
+        const categoryNames = offered.map(({ name }) => name);
+
+        await Promise.all(fallbackKeys.map(async (key) => {
+          const group = resolved.get(key)!;
+          const suggestedName = await aiSuggester.suggest(group.displayName, categoryNames);
+          const suggestedCategoryId = suggestedName ? categoryIdByName.get(suggestedName) : undefined;
+          if (suggestedCategoryId) {
+            resolved.set(key, { ...group, suggestedCategoryId, suggestionSource: "ai" });
+          }
+        }));
+      }
+
+      const merchantGroups = [...grouped.keys()].map((key) => resolved.get(key)!);
 
       return {
         adapter: IMPORT_ADAPTER,
@@ -385,4 +427,8 @@ function configuredBaseCurrency(): ImportCurrency {
   throw new Error("Invalid BASE_CURRENCY");
 }
 
-export const importService = createImportService(prismaImportRepository, configuredBaseCurrency());
+export const importService = createImportService(
+  prismaImportRepository,
+  configuredBaseCurrency(),
+  configuredCategorySuggester(),
+);
