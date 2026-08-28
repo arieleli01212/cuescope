@@ -15,9 +15,11 @@ CREATE TABLE "ImportBatch" (
 );
 
 -- AlterTable
-ALTER TABLE "Transaction"
-ADD COLUMN "sourceFingerprint" TEXT,
-ADD COLUMN "importBatchId" TEXT;
+-- Split into separate single-action ALTER TABLE statements: a production
+-- migration-safety gate used downstream rejects any ALTER TABLE statement
+-- that combines multiple actions behind a top-level comma.
+ALTER TABLE "Transaction" ADD COLUMN "sourceFingerprint" TEXT;
+ALTER TABLE "Transaction" ADD COLUMN "importBatchId" TEXT;
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Transaction_sourceFingerprint_key" ON "Transaction"("sourceFingerprint");
