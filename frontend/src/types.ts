@@ -41,3 +41,57 @@ export interface Summary {
 export interface Me {
   name: string;
 }
+
+export type ImportAdapter = "credit-card-xlsx-v1";
+export type ImportSuggestionSource = "explicit" | "history" | "fallback";
+
+export interface ImportRowPayload {
+  rowNumber: number;
+  occurredAt: string;
+  merchant: string;
+  amount: number;
+  currency: Currency;
+  chargedAmount: number;
+  chargedCurrency: Currency;
+  sourceReferenceHash: string;
+}
+
+export interface ImportRejectedRow {
+  rowNumber: number;
+  code: string;
+  message: string;
+}
+
+export interface ImportMerchantGroup {
+  key: string;
+  displayName: string;
+  rowCount: number;
+  suggestedCategoryId: string;
+  suggestionSource: ImportSuggestionSource;
+}
+
+export interface ImportPreviewRequest {
+  adapter: ImportAdapter;
+  rows: ImportRowPayload[];
+  categoryMappings: Record<string, string>;
+}
+
+export interface ImportPreview {
+  adapter: ImportAdapter;
+  validCount: number;
+  duplicateCount: number;
+  rejected: ImportRejectedRow[];
+  merchantGroups: ImportMerchantGroup[];
+}
+
+export interface ConfirmImportRequest extends ImportPreviewRequest {
+  rejectedRows: Array<{ rowNumber: number; code: string }>;
+}
+
+export interface ImportResult {
+  id: string;
+  adapter: ImportAdapter;
+  importedCount: number;
+  skippedCount: number;
+  rejectedCount: number;
+}
