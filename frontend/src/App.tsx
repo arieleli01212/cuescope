@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, STORAGE_KEY, UnauthorizedError } from "./api";
 import { buildUpdatePayload, createLatestRequestGate, currentMonth, settleRefreshes } from "./lib/dashboardHelpers";
-import type { Category, Me, Summary, Transaction } from "./types";
+import type {
+  Category,
+  ConfirmImportRequest,
+  ImportPreview,
+  ImportPreviewRequest,
+  ImportResult,
+  Me,
+  Summary,
+  Transaction,
+} from "./types";
 import { LoginScreen } from "./components/LoginScreen";
 import { TopBar } from "./components/TopBar";
 import { Nav, type Tab } from "./components/Nav";
@@ -10,6 +19,7 @@ import { SummaryTab } from "./components/SummaryTab";
 import { TransactionsTab } from "./components/TransactionsTab";
 import { CategoriesTab } from "./components/CategoriesTab";
 import { AddTransactionSheet } from "./components/AddTransactionTab";
+import { ImportTransactionsSheet } from "./components/ImportTransactionsSheet";
 
 const TAB_TITLES: Record<Tab, string> = {
   summary: "תמונת מצב פיננסית",
@@ -25,6 +35,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("summary");
   const [addOpen, setAddOpen] = useState(false);
   const addOpenerRef = useRef<HTMLElement | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const categoryRequestGate = useRef(createLatestRequestGate());
@@ -216,6 +227,28 @@ export default function App() {
     await loadCategories();
   }
 
+  const previewImport = (payload: ImportPreviewRequest) =>
+    callApi<ImportPreview>("/imports/preview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((data) => data!);
+
+  const confirmImport = (payload: ConfirmImportRequest) =>
+    callApi<ImportResult>("/imports", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then((data) => data!);
+
+  const undoImport = (batchId: string) => callApi(`/imports/${batchId}`, { method: "DELETE" }).then(() => undefined);
+
+  async function handleImported() {
+    await settleRefreshes([
+      loadCategories(),
+      loadSummary(summaryMonth),
+      loadTransactions(listMonth),
+    ]);
+  }
+
   if (!loggedIn) {
     return <LoginScreen onLogin={tryLogin} error={loginError} />;
   }
@@ -244,6 +277,7 @@ export default function App() {
               locked={editingLocked}
               onSave={handleSaveTransaction}
               onDelete={handleDeleteTransaction}
+              onImportClick={() => setImportOpen(true)}
             />
           )}
           {tab === "categories" && (
@@ -264,6 +298,15 @@ export default function App() {
         categories={categories}
         onSubmit={handleAddTransaction}
         onCreateCategory={handleCreateCategory}
+      />
+      <ImportTransactionsSheet
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        categories={categories}
+        onPreview={previewImport}
+        onConfirm={confirmImport}
+        onUndo={undoImport}
+        onImported={handleImported}
       />
     </div>
   );

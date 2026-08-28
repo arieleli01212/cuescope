@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Upload } from "lucide-react";
 
 import type { Category, Transaction } from "../types";
 import {
@@ -21,6 +21,7 @@ interface TransactionsTabProps {
   locked: boolean;
   onSave: (id: string, payload: ReturnType<typeof buildUpdatePayload>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onImportClick: () => void;
 }
 
 export function TransactionsTab({
@@ -31,6 +32,7 @@ export function TransactionsTab({
   locked,
   onSave,
   onDelete,
+  onImportClick,
 }: TransactionsTabProps) {
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<TransactionFilter>("ALL");
@@ -50,11 +52,17 @@ export function TransactionsTab({
               <CardTitle id="transactions-title" className="text-xl">עסקאות</CardTitle>
               <p className="mt-1 text-sm text-muted">איתור, סינון וניהול של הפעילות החודשית</p>
             </div>
-            {transactions !== null && (
-              <p className="text-sm text-muted" aria-live="polite">
-                {filteredTransactions.length} מתוך {transactions.length} עסקאות
-              </p>
-            )}
+            <div className="flex items-center gap-3">
+              {transactions !== null && (
+                <p className="text-sm text-muted" aria-live="polite">
+                  {filteredTransactions.length} מתוך {transactions.length} עסקאות
+                </p>
+              )}
+              <Button type="button" variant="outline" size="sm" disabled={locked} onClick={onImportClick} className="gap-2">
+                <Upload aria-hidden="true" className="h-4 w-4" />
+                ייבוא קובץ
+              </Button>
+            </div>
           </div>
 
           <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(14rem,1fr)_12rem_auto] lg:items-end">

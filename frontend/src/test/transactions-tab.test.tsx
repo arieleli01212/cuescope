@@ -43,6 +43,7 @@ function renderTransactions(overrides: Partial<React.ComponentProps<typeof Trans
     locked: false,
     onSave: vi.fn().mockResolvedValue(undefined),
     onDelete: vi.fn().mockResolvedValue(undefined),
+    onImportClick: vi.fn(),
     ...overrides,
   };
 
@@ -81,6 +82,15 @@ it("opens transaction editing in an accessible dialog", async () => {
   const dialog = screen.getByRole("dialog", { name: "עריכת עסקה" });
   expect(dialog).toBeInTheDocument();
   expect(within(dialog).getByLabelText("סכום")).toHaveValue(40);
+});
+
+it("shows an accessible import button that opens the import sheet", async () => {
+  const user = userEvent.setup();
+  const onImportClick = vi.fn();
+  renderTransactions({ onImportClick });
+
+  await user.click(screen.getByRole("button", { name: "ייבוא קובץ" }));
+  expect(onImportClick).toHaveBeenCalledTimes(1);
 });
 
 it("requires explicit confirmation before deleting a transaction", async () => {
