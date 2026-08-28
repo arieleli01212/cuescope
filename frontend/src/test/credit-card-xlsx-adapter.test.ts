@@ -135,6 +135,32 @@ describe("creditCardXlsxAdapter", () => {
     } satisfies Partial<CreditCardXlsxAdapterError>);
   });
 
+  test("parses dot-separated two-digit-year dates (DD.MM.YY) as well as DD/MM/YYYY", async () => {
+    mockSheets([
+      [...CREDIT_CARD_XLSX_HEADERS],
+      ["26.08.26", "Demo Shop", 42, "₪", 42, "₪", "V-1", ""],
+    ]);
+
+    const parsed = await parseCreditCardXlsx(new Blob());
+
+    expect(parsed.rejected).toEqual([]);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0].occurredAt).toBe("2026-08-26T00:00:00.000Z");
+  });
+
+  test("recognizes the ₪ currency symbol as ILS for both transaction and charged currency", async () => {
+    mockSheets([
+      [...CREDIT_CARD_XLSX_HEADERS],
+      ["26/08/2026", "Demo Shop", 42, "₪", 42, "₪", "V-1", ""],
+    ]);
+
+    const parsed = await parseCreditCardXlsx(new Blob());
+
+    expect(parsed.rejected).toEqual([]);
+    expect(parsed.rows[0].currency).toBe("ILS");
+    expect(parsed.rows[0].chargedCurrency).toBe("ILS");
+  });
+
   test("counts footer-shaped rows toward the 5,000-row parser cap", async () => {
     const footer = ["סה״כ לחיוב", null, null, null, 1, "ש״ח"];
     mockSheets([

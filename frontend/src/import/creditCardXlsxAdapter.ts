@@ -28,12 +28,15 @@ const CURRENCY_LABELS = new Map<string, Currency>([
   ["שח", "ILS"],
   ["ש\"ח", "ILS"],
   ["ש״ח", "ILS"],
+  ["₪", "ILS"],
   ["USD", "USD"],
   ["דולר", "USD"],
   ["דולר ארה\"ב", "USD"],
   ["דולר ארה״ב", "USD"],
+  ["$", "USD"],
   ["EUR", "EUR"],
   ["אירו", "EUR"],
+  ["€", "EUR"],
 ]);
 
 const SUMMARY_LABELS = new Set(["סה\"כ", "סה״כ", "סה\"כ לחיוב", "סה״כ לחיוב", "סך הכל"]);
@@ -82,11 +85,16 @@ function parseDate(value: CellValue | null): string | null {
     month = value.getUTCMonth() + 1;
     day = value.getUTCDate();
   } else if (typeof value === "string") {
-    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim());
+    // Supports both DD/MM/YYYY (slash, four-digit year) and DD.MM.YY (dot,
+    // two-digit year, as issued by at least one real card issuer's export).
+    // A two-digit year is assumed to be in the 2000s: statements are never
+    // decades old, so this can't collide with a genuinely historical date.
+    const match = /^(\d{2})([./])(\d{2})\2(\d{2}|\d{4})$/.exec(value.trim());
     if (!match) return null;
     day = Number(match[1]);
-    month = Number(match[2]);
-    year = Number(match[3]);
+    month = Number(match[3]);
+    const yearText = match[4];
+    year = yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText);
   } else {
     return null;
   }
